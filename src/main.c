@@ -100,20 +100,20 @@ static void ic_setup(void) {
 static usbd_device *usbd_dev;
 
 const struct usb_device_descriptor dev_descr = {
-	.bLength = USB_DT_DEVICE_SIZE,
-	.bDescriptorType = USB_DT_DEVICE,
-	.bcdUSB = 0x0200,
-	.bDeviceClass = 0,
-	.bDeviceSubClass = 0,
-	.bDeviceProtocol = 0,
-	.bMaxPacketSize0 = 64,
-	.idVendor = 0x0483,
-	.idProduct = 0x5710,
-	.bcdDevice = 0x0200,
-	.iManufacturer = 1,
-	.iProduct = 2,
-	.iSerialNumber = 3,
-	.bNumConfigurations = 1,
+    .bLength = USB_DT_DEVICE_SIZE,
+    .bDescriptorType = USB_DT_DEVICE,
+    .bcdUSB = 0x0200,
+    .bDeviceClass = 0,
+    .bDeviceSubClass = 0,
+    .bDeviceProtocol = 0,
+    .bMaxPacketSize0 = 64,
+    .idVendor = 0x0483,
+    .idProduct = 0x5710,
+    .bcdDevice = 0x0200,
+    .iManufacturer = 1,
+    .iProduct = 2,
+    .iSerialNumber = 3,
+    .bNumConfigurations = 1,
 };
 
 static const uint8_t hid_report_descriptor[] = {
@@ -154,113 +154,113 @@ static const uint8_t hid_report_descriptor[] = {
 
 
 static const struct {
-	struct usb_hid_descriptor hid_descriptor;
-	struct {
-		uint8_t bReportDescriptorType;
-		uint16_t wDescriptorLength;
-	} __attribute__((packed)) hid_report;
+    struct usb_hid_descriptor hid_descriptor;
+    struct {
+        uint8_t bReportDescriptorType;
+        uint16_t wDescriptorLength;
+    } __attribute__((packed)) hid_report;
 } __attribute__((packed)) hid_function = {
-	.hid_descriptor = {
-		.bLength = sizeof(hid_function),
-		.bDescriptorType = USB_DT_HID,
-		.bcdHID = 0x0111,
-		.bCountryCode = 0,
-		.bNumDescriptors = 1,
-	},
-	.hid_report = {
-		.bReportDescriptorType = USB_DT_REPORT,
-		.wDescriptorLength = sizeof(hid_report_descriptor),
-	}
+    .hid_descriptor = {
+        .bLength = sizeof(hid_function),
+        .bDescriptorType = USB_DT_HID,
+        .bcdHID = 0x0111,
+        .bCountryCode = 0,
+        .bNumDescriptors = 1,
+    },
+    .hid_report = {
+        .bReportDescriptorType = USB_DT_REPORT,
+        .wDescriptorLength = sizeof(hid_report_descriptor),
+    }
 };
 
 
 const struct usb_endpoint_descriptor hid_endpoint = {
-	.bLength = USB_DT_ENDPOINT_SIZE,
-	.bDescriptorType = USB_DT_ENDPOINT,
-	.bEndpointAddress = 0x81,
-	.bmAttributes = USB_ENDPOINT_ATTR_INTERRUPT,
-	.wMaxPacketSize = 17,
-	.bInterval = 10,
+    .bLength = USB_DT_ENDPOINT_SIZE,
+    .bDescriptorType = USB_DT_ENDPOINT,
+    .bEndpointAddress = 0x81,
+    .bmAttributes = USB_ENDPOINT_ATTR_INTERRUPT,
+    .wMaxPacketSize = 17,
+    .bInterval = 10,
 };
 
 const struct usb_interface_descriptor hid_iface = {
-	.bLength = USB_DT_INTERFACE_SIZE,
-	.bDescriptorType = USB_DT_INTERFACE,
-	.bInterfaceNumber = 0,
-	.bAlternateSetting = 0,
-	.bNumEndpoints = 1,
-	.bInterfaceClass = USB_CLASS_HID,
-	.bInterfaceSubClass = 0,
-	.bInterfaceProtocol = 0,
-	.iInterface = 0,
+    .bLength = USB_DT_INTERFACE_SIZE,
+    .bDescriptorType = USB_DT_INTERFACE,
+    .bInterfaceNumber = 0,
+    .bAlternateSetting = 0,
+    .bNumEndpoints = 1,
+    .bInterfaceClass = USB_CLASS_HID,
+    .bInterfaceSubClass = 0,
+    .bInterfaceProtocol = 0,
+    .iInterface = 0,
 
-	.endpoint = &hid_endpoint,
+    .endpoint = &hid_endpoint,
 
-	.extra = &hid_function,
-	.extralen = sizeof(hid_function),
+    .extra = &hid_function,
+    .extralen = sizeof(hid_function),
 };
 
 
 const struct usb_interface ifaces[] = {{
-	.num_altsetting = 1,
-	.altsetting = &hid_iface,
-}};
+        .num_altsetting = 1,
+        .altsetting = &hid_iface,
+    }};
 
 
 const struct usb_config_descriptor config = {
-	.bLength = USB_DT_CONFIGURATION_SIZE,
-	.bDescriptorType = USB_DT_CONFIGURATION,
-	.wTotalLength = 0,
-	.bNumInterfaces = 1,
-	.bConfigurationValue = 1,
-	.iConfiguration = 0,
-	.bmAttributes = 0x80,
-	.bMaxPower = 0x32,
+    .bLength = USB_DT_CONFIGURATION_SIZE,
+    .bDescriptorType = USB_DT_CONFIGURATION,
+    .wTotalLength = 0,
+    .bNumInterfaces = 1,
+    .bConfigurationValue = 1,
+    .iConfiguration = 0,
+    .bmAttributes = 0x80,
+    .bMaxPower = 0x32,
 
-	.interface = ifaces,
+    .interface = ifaces,
 };
 
 
 static const char *usb_strings[] = {
-	"Ducktronics Inc.",
-	"PPM to Joystick Interface",
-	"000001",
+    "Ducktronics Inc.",
+    "PPM to Joystick Interface",
+    "000001",
 };
 
 /* Buffer to be used for control requests. */
 uint8_t usbd_control_buffer[128];
 
 static enum usbd_request_return_codes hid_control_request(usbd_device *dev, struct usb_setup_data *req, uint8_t **buf, uint16_t *len,
-			void (**complete)(usbd_device *, struct usb_setup_data *))
+                                                          void (**complete)(usbd_device *, struct usb_setup_data *))
 {
-	(void)complete;
-	(void)dev;
+    (void)complete;
+    (void)dev;
 
-	if((req->bmRequestType != 0x81) ||
-	   (req->bRequest != USB_REQ_GET_DESCRIPTOR) ||
-	   (req->wValue != 0x2200))
-		return USBD_REQ_NOTSUPP;
+    if((req->bmRequestType != 0x81) ||
+       (req->bRequest != USB_REQ_GET_DESCRIPTOR) ||
+       (req->wValue != 0x2200))
+        return USBD_REQ_NOTSUPP;
 
-	// Handle the HID report descriptor.
-	*buf = (uint8_t *)hid_report_descriptor;
-	*len = sizeof(hid_report_descriptor);
+    // Handle the HID report descriptor.
+    *buf = (uint8_t *)hid_report_descriptor;
+    *len = sizeof(hid_report_descriptor);
 
-	return USBD_REQ_HANDLED;
+    return USBD_REQ_HANDLED;
 }
 
 
 static void hid_set_config(usbd_device *dev, uint16_t wValue)
 {
-	(void)wValue;
-	(void)dev;
+    (void)wValue;
+    (void)dev;
 
-	usbd_ep_setup(dev, 0x81, USB_ENDPOINT_ATTR_INTERRUPT, 17, NULL);
+    usbd_ep_setup(dev, 0x81, USB_ENDPOINT_ATTR_INTERRUPT, 17, NULL);
 
-	usbd_register_control_callback(
-				dev,
-				USB_REQ_TYPE_STANDARD | USB_REQ_TYPE_INTERFACE,
-				USB_REQ_TYPE_TYPE | USB_REQ_TYPE_RECIPIENT,
-				hid_control_request);
+    usbd_register_control_callback(
+        dev,
+        USB_REQ_TYPE_STANDARD | USB_REQ_TYPE_INTERFACE,
+        USB_REQ_TYPE_TYPE | USB_REQ_TYPE_RECIPIENT,
+        hid_control_request);
 
     TIM3_CR1 |= TIM_CR1_CEN;
 }
@@ -302,7 +302,7 @@ int main(void) {
     gpio_clear(GPIOC, GPIO13);
 
     /* Pull down for nSRST */
-	gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ,
+    gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ,
                   GPIO_CNF_OUTPUT_PUSHPULL, 0);
     gpio_clear(GPIOB, 0);
 
@@ -310,20 +310,21 @@ int main(void) {
     usb_setup();
 
     /*
-	 * Vile hack to reenumerate, physically _drag_ d+ low.
-	 * (need at least 2.5us to trigger usb disconnect)
-	 */
+     * Vile hack to reenumerate, physically _drag_ d+ low.
+     * (need at least 2.5us to trigger usb disconnect)
+     */
     gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ,
-		GPIO_CNF_OUTPUT_PUSHPULL, GPIO12);
+                  GPIO_CNF_OUTPUT_PUSHPULL, GPIO12);
     gpio_clear(GPIOA, GPIO12);
 
-    for (int i = 0; i < 800000; i++)
+    for (int i = 0; i < 800000; i++) {
         __asm__("nop");
+    }
 
     usbd_dev = usbd_init(&st_usbfs_v1_usb_driver, &dev_descr, &config, usb_strings, 3, usbd_control_buffer, sizeof(usbd_control_buffer));
     usbd_register_set_config_callback(usbd_dev, hid_set_config);
 
-	while (1) {
+    while (1) {
         usbd_poll(usbd_dev);
     }
 }
