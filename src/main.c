@@ -24,6 +24,10 @@
 #include <libopencm3/usb/hid.h>
 
 
+#define BUTTONS_MASK  0x01fe
+#define BUTTONS_SHIFT 1
+
+
 /***************** PPM decoding *****************/
 
 #define NUM_CHANNELS 8
@@ -96,6 +100,8 @@ static void ic_setup(void) {
 
 
 /***************** USB *****************/
+
+#define HID_EP_LENGTH (NUM_CHANNELS * 2 + 1)
 
 static usbd_device *usbd_dev;
 
@@ -179,7 +185,7 @@ const struct usb_endpoint_descriptor hid_endpoint = {
     .bDescriptorType = USB_DT_ENDPOINT,
     .bEndpointAddress = 0x81,
     .bmAttributes = USB_ENDPOINT_ATTR_INTERRUPT,
-    .wMaxPacketSize = 17,
+    .wMaxPacketSize = HID_EP_LENGTH,
     .bInterval = 10,
 };
 
@@ -230,9 +236,9 @@ static const char *usb_strings[] = {
 /* Buffer to be used for control requests. */
 uint8_t usbd_control_buffer[128];
 
-static enum usbd_request_return_codes hid_control_request(usbd_device *dev, struct usb_setup_data *req, uint8_t **buf, uint16_t *len,
-                                                          void (**complete)(usbd_device *, struct usb_setup_data *))
-{
+static enum usbd_request_return_codes hid_control_request(
+    usbd_device *dev, struct usb_setup_data *req, uint8_t **buf, uint16_t *len,
+    void (**complete)(usbd_device *, struct usb_setup_data *)) {
     (void)complete;
     (void)dev;
 
@@ -249,12 +255,11 @@ static enum usbd_request_return_codes hid_control_request(usbd_device *dev, stru
 }
 
 
-static void hid_set_config(usbd_device *dev, uint16_t wValue)
-{
+static void hid_set_config(usbd_device *dev, uint16_t wValue) {
     (void)wValue;
     (void)dev;
 
-    usbd_ep_setup(dev, 0x81, USB_ENDPOINT_ATTR_INTERRUPT, 17, NULL);
+    usbd_ep_setup(dev, 0x81, USB_ENDPOINT_ATTR_INTERRUPT, HID_EP_LENGTH, NULL);
 
     usbd_register_control_callback(
         dev,
@@ -280,31 +285,40 @@ void tim3_isr() {
     if (TIM3_SR & TIM_SR_UIF) {
         TIM3_SR &= ~TIM_SR_UIF;
 
-        char buf[17];
-        buf[0] = 0;
+        char buf[HID_EP_LENGTH];
+        buf[0] = gpio_get(GPIOA, BUTTONS_MASK) >> BUTTONS_SHIFT;
         for (int i = 0; i < NUM_CHANNELS; i++) {
             buf[(i*2)+1] = (ch_values[i] - 600) / 4;
             buf[(i*2)+2] = 0;
         }
 
-        uint16_t ret = usbd_ep_write_packet(usbd_dev, 0x81, (uint8_t *)buf, sizeof(buf));
+        usbd_ep_write_packet(usbd_dev, 0x81, (uint8_t *)buf, sizeof(buf));
     }
 }
 
 /***************** main *****************/
+
+static void gpio_setup(void) {
+    gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
+    gpio_clear(GPIOC, GPIO13);
+
+    // upper 8 bit of Port A as input, pull down
+    gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, BUTTONS_MASK);
+    gpio_clear(GPIOA, BUTTONS_MASK);
+
+    /* Pull down for nSRST */
+    gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ,
+                  GPIO_CNF_OUTPUT_PUSHPULL, 0);
+    gpio_clear(GPIOB, 0);
+}
 
 int main(void) {
     rcc_clock_setup_in_hse_8mhz_out_72mhz();
     rcc_periph_clock_enable(RCC_GPIOA);
     rcc_periph_clock_enable(RCC_GPIOB);
     rcc_periph_clock_enable(RCC_GPIOC);
-    gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
-    gpio_clear(GPIOC, GPIO13);
 
-    /* Pull down for nSRST */
-    gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ,
-                  GPIO_CNF_OUTPUT_PUSHPULL, 0);
-    gpio_clear(GPIOB, 0);
+    gpio_setup();
 
     ic_setup();
     usb_setup();
