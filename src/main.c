@@ -17,6 +17,8 @@
 
 #include <stddef.h>
 #include <libopencm3/cm3/nvic.h>
+#include <libopencm3/stm32/adc.h>
+#include <libopencm3/stm32/dma.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/timer.h>
@@ -24,14 +26,15 @@
 #include <libopencm3/usb/hid.h>
 
 
-#define BUTTONS_MASK  0x01fe
-#define BUTTONS_SHIFT 1
+#define BUTTONS_PORT GPIOB
+#define BUTTONS_MASK  0xFF00
+#define BUTTONS_SHIFT 8
 
 
 /***************** PPM decoding *****************/
 
 #define NUM_CHANNELS 8
-#define MS_TO_TICKS(x) ((x) * 1000)
+#define MS_TO_TICKS(x) ((uint16_t)((x) * 4000))
 
 volatile int ch_values[NUM_CHANNELS];
 volatile int cur_ch = 0;
@@ -89,7 +92,7 @@ static void ic_setup(void) {
     // enable interrupt
     TIM2_DIER = TIM_DIER_CC1IE | TIM_DIER_CC2IE;
 
-    TIM2_PSC = 72 - 1; // 1us per tick
+    TIM2_PSC = 18 - 1; // 0.25us per tick
     TIM2_ARR = 0xFFFF;
 
     TIM2_CR1 |= TIM_CR1_CEN;
@@ -99,9 +102,56 @@ static void ic_setup(void) {
 }
 
 
+/***************** ADC *****************/
+
+#define ADC_CHANNEL_NUM 2
+#define ADC_SAMPLETIME ADC_SMPR_SMP_239DOT5CYC
+#define ADC_GPIO_MASK 0x0030
+volatile uint16_t adc_channels[ADC_CHANNEL_NUM];
+
+static void adc_setup(void) {
+    RCC_APB2ENR |= RCC_APB2ENR_ADC1EN;
+    RCC_APB1ENR |= RCC_APB1ENR_TIM3EN;
+    RCC_AHBENR |= RCC_AHBENR_DMA1EN;
+
+    TIM3_CR1 = 0;
+    TIM3_CR2 = TIM_CR2_MMS_UPDATE;
+    TIM3_PSC = 72 - 1; // 100Hz
+    TIM3_ARR = 10000 - 1;
+
+    DMA1_CCR1 = DMA_CCR_MSIZE_16BIT | DMA_CCR_PSIZE_16BIT |
+        DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_PL_HIGH;
+    DMA1_CMAR1 = (uint32_t)adc_channels;
+    DMA1_CPAR1 = (uint32_t)&ADC1_DR;
+    DMA1_CNDTR1 = ADC_CHANNEL_NUM;
+
+    ADC1_CR1 = ADC_CR1_SCAN | ADC_CR1_DISCNUM_4CHANNELS;
+    ADC1_CR2 = ADC_CR2_EXTTRIG | ADC_CR2_EXTSEL_TIM3_TRGO |
+        ADC_CR2_DMA;
+    ADC1_SQR1 = (ADC_CHANNEL_NUM - 1) << ADC_SQR1_L_LSB;
+    ADC1_SQR2 = 0;
+    ADC1_SQR3 = (4 << ADC_SQR3_SQ1_LSB) | (5 << ADC_SQR3_SQ2_LSB);
+    ADC1_SMPR2 = (ADC_SAMPLETIME << ADC_SMPR2_SMP0_LSB) |
+        (ADC_SAMPLETIME << ADC_SMPR2_SMP1_LSB);
+
+    ADC1_CR2 |= ADC_CR2_ADON;
+
+    // wait a little
+    for (int i = 0; i < 0xff; i++) ;
+
+    // calibrate ADC
+    ADC1_CR2 |= ADC_CR2_CAL;
+    while (ADC1_CR2 & ADC_CR2_CAL) ;
+
+    // enable
+    DMA1_CCR1 |= DMA_CCR_EN;
+    TIM3_CR1 |= TIM_CR1_CEN;
+}
+
+
 /***************** USB *****************/
 
-#define HID_EP_LENGTH (NUM_CHANNELS * 2 + 1)
+#define HID_EP_LENGTH ((NUM_CHANNELS * 2) + 1 + (ADC_CHANNEL_NUM * 2))
 
 static usbd_device *usbd_dev;
 
@@ -130,29 +180,38 @@ static const uint8_t hid_report_descriptor[] = {
     0xa1, 0x00, // COLLECTION (Physical)
 
     0x05, 0x09, // USAGE_PAGE (Button)
-    0x19, 0x01, // USAGE_MINIMUM (Button 1)
-    0x29, 0x08, // USAGE_MAXIMUM (Button 8)
+    0x19, 1,    // USAGE_MINIMUM (Button 1)
+    0x29, 8,    // USAGE_MAXIMUM (Button 8)
     0x15, 0x00, // LOGICAL_MINIMUM (0)
     0x25, 0x01, // LOGICAL_MAXIMUM (1)
-    0x95, 0x08, // REPORT_COUNT (8)
+    0x95, 8,    // REPORT_COUNT (8)
     0x75, 0x01, // REPORT_SIZE (1)
     0x81, 0x02, // INPUT (Data,Var,Abs)
 
     0x05, 0x01, // USAGE_PAGE (Generic Desktop)
+    0xA1, 0x00, // Collection ()
     0x15, 0x00, // LOGICAL_MINIMUM (0)
-    0x26, 0xff, 0x00, // LOGICAL_MAXIMUM
-    0x75, 0x10, // REPORT_SIZE
+    0x26, 0xff, 0x0f, // LOGICAL_MAXIMUM
+
+    0x75, 16, // REPORT_SIZE 16
+    0x95, 10, // REPORT_COUNT
 
     0x09, 0x30, // USAGE (X)
     0x09, 0x31, // USAGE (Y)
     0x09, 0x32, // USAGE (Z)
     0x09, 0x33, // USAGE (Rx)
+
     0x09, 0x34, // USAGE (Ry)
     0x09, 0x35, // USAGE (Rz)
-    0x09, 0x36, // USAGE (Throttle)
-    0x09, 0x37, // USAGE (Rudder)
-    0x95, 0x08, // REPORT_COUNT
-    0x81, 0x82, // INPUT (Data,Var,Abs,Vol)
+    0x09, 0x36, // USAGE (Slider)
+    0x09, 0x37, // USAGE (Dial)
+
+    0x09, 0x38, // USAGE (Wheel)
+    0x09, 0x40, // USAGE (Vx)
+
+    0x81, 0x02, // INPUT (Data,Var,Abs)
+
+    0xc0, // END_COLLECTION
 
     0xc0, // END_COLLECTION
     0xc0 // END_COLLECTION
@@ -259,7 +318,7 @@ static void hid_set_config(usbd_device *dev, uint16_t wValue) {
     (void)wValue;
     (void)dev;
 
-    usbd_ep_setup(dev, 0x81, USB_ENDPOINT_ATTR_INTERRUPT, HID_EP_LENGTH, NULL);
+    usbd_ep_setup(dev, 0x81, USB_ENDPOINT_ATTR_INTERRUPT, HID_EP_LENGTH, 0);
 
     usbd_register_control_callback(
         dev,
@@ -267,29 +326,42 @@ static void hid_set_config(usbd_device *dev, uint16_t wValue) {
         USB_REQ_TYPE_TYPE | USB_REQ_TYPE_RECIPIENT,
         hid_control_request);
 
-    TIM3_CR1 |= TIM_CR1_CEN;
+    TIM4_CR1 |= TIM_CR1_CEN;
 }
 
 static void usb_setup(void) {
     RCC_APB1ENR |= RCC_APB1ENR_USBEN;
+    RCC_APB1ENR |= RCC_APB1ENR_TIM4EN;
 
-    RCC_APB1ENR |= RCC_APB1ENR_TIM3EN;
-    nvic_enable_irq(NVIC_TIM3_IRQ);
-    TIM3_CR1 = TIM_CR1_ARPE;
-    TIM3_PSC = 72 - 1;
-    TIM3_ARR = 10000 - 1; // 100 Hz
-    TIM3_DIER = TIM_DIER_UIE;
+    nvic_enable_irq(NVIC_TIM4_IRQ);
+
+    TIM4_CR1 = TIM_CR1_ARPE;
+    TIM4_PSC = 72 - 1;
+    TIM4_ARR = 10000 - 1; // 100 Hz
+    TIM4_DIER = TIM_DIER_UIE;
 }
 
-void tim3_isr() {
-    if (TIM3_SR & TIM_SR_UIF) {
-        TIM3_SR &= ~TIM_SR_UIF;
+void tim4_isr() {
+    if (TIM4_SR & TIM_SR_UIF) {
+        TIM4_SR &= ~TIM_SR_UIF;
 
-        char buf[HID_EP_LENGTH];
-        buf[0] = gpio_get(GPIOA, BUTTONS_MASK) >> BUTTONS_SHIFT;
+        uint8_t buf[HID_EP_LENGTH];
+        for (int i = 0 ; i < HID_EP_LENGTH; i++) {
+            buf[i] = 0;
+        }
+
+        // buttons
+        buf[0] = gpio_get(BUTTONS_PORT, BUTTONS_MASK) >> BUTTONS_SHIFT;
+        // ppm channels
         for (int i = 0; i < NUM_CHANNELS; i++) {
-            buf[(i*2)+1] = (ch_values[i] - 600) / 4;
-            buf[(i*2)+2] = 0;
+            uint16_t val = ch_values[i] - MS_TO_TICKS(0.5);
+            buf[(i*2)+1] = val & 0xff;
+            buf[(i*2)+2] = val >> 8;
+        }
+        // adc channels
+        for (int i = 0; i < ADC_CHANNEL_NUM; i++) {
+            buf[(i * 2) + 1 + (NUM_CHANNELS * 2)] = adc_channels[i] & 0xff;
+            buf[(i * 2) + 1 + (NUM_CHANNELS * 2) + 1] = adc_channels[i] >> 8;
         }
 
         usbd_ep_write_packet(usbd_dev, 0x81, (uint8_t *)buf, sizeof(buf));
@@ -303,13 +375,11 @@ static void gpio_setup(void) {
     gpio_clear(GPIOC, GPIO13);
 
     // upper 8 bit of Port A as input, pull down
-    gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, BUTTONS_MASK);
-    gpio_clear(GPIOA, BUTTONS_MASK);
+    gpio_set_mode(BUTTONS_PORT, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, BUTTONS_MASK);
+    gpio_clear(BUTTONS_PORT, BUTTONS_MASK);
 
-    /* Pull down for nSRST */
-    gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ,
-                  GPIO_CNF_OUTPUT_PUSHPULL, 0);
-    gpio_clear(GPIOB, 0);
+    // adc inputs
+    gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, ADC_GPIO_MASK);
 }
 
 int main(void) {
@@ -321,6 +391,8 @@ int main(void) {
     gpio_setup();
 
     ic_setup();
+    adc_setup();
+
     usb_setup();
 
     /*
